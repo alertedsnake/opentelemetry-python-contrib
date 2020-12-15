@@ -315,3 +315,66 @@ def _extract_tags_from_resource(resource):
         else:
             tags[attribute_key] = attribute_value
     return [tags, service_name]
+
+
+class DatadogMetricsExporter(MetricsExporter):
+    """
+    Args:
+        tags: list of strings
+    """
+
+    def __init__(self, host=None, port=None, tags: Optional[Sequence[str]] = None, prefix: str = ""):
+        self._statsd = None
+        self._host = host or os.environ.get("DD_AGENT_HOST", "localhost")
+        self._port = int(port or os.environ.get("DD_DOGSTATSD_PORT", 8125))
+        self._prefix = prefix
+
+        self._tags = tags or os.environ.get("DD_TAGS")
+
+        self._non_letters_nor_digits_re = re.compile(
+            r"[^\w]", re.UNICODE | re.IGNORECASE
+        )
+
+    @property
+    def statsd(self):
+        if not self._statsd:
+            self._statsd = DogStatsd(host = self._host,
+                                     port = self._port,
+                                     constant_tags = self._tags)
+        return self._statsd
+
+
+    def export(self, export_records: Sequence[ExportRecord]) -> MetricsExportResult:
+        for export_record in export_records:
+
+            # handle labels/tags
+            tags = list(':'.join(str(tag)) for tag in dict(export_record.labels).items())
+
+            # handle name
+            metric_name = ""
+            if self._prefix != "":
+                metric_name = self._prefix + "_"
+            metric_name += self._sanitize(export_record.instrument.name)
+
+            if isinstance(export_record.instrument, (Counter, UpDownCounter)):
+                self.statsd.increment(metric_name,
+                                      value = export_record.aggregator.checkpoint,
+                                      tags = tags)
+
+            elif isinstance(export_record.instrument, ValueRecorder):
+                self.statsd.gauge(metric_name,
+                                  value = export_record.aggregator.checkpoint,
+                                  tags = tags)
+
+            else:
+                logger.warning(
+                    "Unsupported metric type, %s", type(export_record.instrument)
+                )
+
+        return MetricsExportResult.SUCCESS
+
+    def _sanitize(self, key: str) -> str:
+        """sanitize the given metric name or label according to DataDog rules.
+        Replace all characters other than [A-Za-z0-9_] with '_'.
+        """
+        return self._non_letters_nor_digits_re.sub("_", key)
