@@ -14,11 +14,21 @@
 
 import logging
 import os
+import re
+from typing import Optional, Sequence
 from urllib.parse import urlparse
 
+from datadog import DogStatsd
 from ddtrace.ext import SpanTypes as DatadogSpanTypes
 from ddtrace.internal.writer import AgentWriter
 from ddtrace.span import Span as DatadogSpan
+
+from opentelemetry.metrics import Counter, UpDownCounter, ValueRecorder
+from opentelemetry.sdk.metrics.export import (
+    ExportRecord,
+    MetricsExporter,
+    MetricsExportResult,
+)
 
 import opentelemetry.trace as trace_api
 from opentelemetry.sdk.trace import sampling
@@ -301,6 +311,7 @@ def _parse_tags_str(tags_str):
     return parsed_tags
 
 
+
 def _extract_tags_from_resource(resource):
     """Parse tags from resource.attributes, except service.name which
     has special significance within datadog"""
@@ -348,7 +359,7 @@ class DatadogMetricsExporter(MetricsExporter):
         for export_record in export_records:
 
             # handle labels/tags
-            tags = list(':'.join(str(tag)) for tag in dict(export_record.labels).items())
+            tags = list(':'.join(tag) for tag in dict(export_record.labels).items())
 
             # handle name
             metric_name = ""
