@@ -359,7 +359,7 @@ class DatadogMetricsExporter(MetricsExporter):
         for export_record in export_records:
 
             # handle labels/tags
-            tags = list(':'.join(tag) for tag in dict(export_record.labels).items())
+            tags = list(':'.join(str(tag)) for tag in dict(export_record.labels).items())
 
             # handle name
             metric_name = ""
