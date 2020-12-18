@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `opentelemetry-instrumentation-requests`, `opentelemetry-instrumentation-urllib` Fix span name callback parameters
   ([#259](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/259))
 - `opentelemetry-instrumentation-grpc` Updated client attributes, added tests, fixed examples, docs
-  ([#xxx](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/xxx))
+  ([#269](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/269))
 
 ## [0.16b1](https://github.com/open-telemetry/opentelemetry-python-contrib/releases/tag/v0.16b1) - 2020-11-26
 
