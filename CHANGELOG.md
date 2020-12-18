@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#253](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/253))
 - `opentelemetry-instrumentation-requests`, `opentelemetry-instrumentation-urllib` Fix span name callback parameters
   ([#259](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/259))
+- `opentelemetry-instrumentation-grpc` Fix issue tracking child spans in streaming responses
+  ([#260](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/260))
 - `opentelemetry-exporter-datadog` Fix unintentional type change of span trace flags
   ([#261](https://github.com/open-telemetry/opentelemetry-python-contrib/pull/261))
 
