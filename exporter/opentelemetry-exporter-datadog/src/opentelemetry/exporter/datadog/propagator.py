@@ -99,7 +99,7 @@ class DatadogFormat(TextMapPropagator):
             self.SAMPLING_PRIORITY_KEY,
             str(constants.AUTO_KEEP if sampled else constants.AUTO_REJECT),
         )
-        if constants.DD_ORIGIN in span.context.trace_state:
+        if span.context.trace_state.get(constants.DD_ORIGIN):
             set_in_carrier(
                 carrier,
                 self.ORIGIN_KEY,
