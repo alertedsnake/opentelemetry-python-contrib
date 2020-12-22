@@ -70,7 +70,7 @@ API
 """
 # pylint: disable=import-error
 
-from .exporter import DatadogSpanExporter
+from .exporter import DatadogMetricsExporter, DatadogSpanExporter
 from .spanprocessor import DatadogExportSpanProcessor
 
-__all__ = ["DatadogExportSpanProcessor", "DatadogSpanExporter"]
+__all__ = ["DatadogExportSpanProcessor", "DatadogMetricsExporter", "DatadogSpanExporter"]

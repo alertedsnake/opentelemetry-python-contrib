@@ -14,11 +14,22 @@
 
 import logging
 import os
+import re
+from typing import Optional, Sequence
 from urllib.parse import urlparse
 
+from datadog import DogStatsd
 from ddtrace.ext import SpanTypes as DatadogSpanTypes
 from ddtrace.internal.writer import AgentWriter
 from ddtrace.span import Span as DatadogSpan
+
+from opentelemetry.metrics import Counter, UpDownCounter, ValueRecorder
+from opentelemetry.sdk.metrics.export import (
+    ExportRecord,
+    MetricsExporter,
+    MetricsExportResult,
+)
+from opentelemetry.sdk.metrics.export.aggregate import MinMaxSumCountAggregator
 
 import opentelemetry.trace as trace_api
 from opentelemetry.sdk.trace import sampling
@@ -34,6 +45,7 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 DEFAULT_AGENT_URL = "http://localhost:8126"
@@ -152,7 +164,8 @@ class DatadogSpanExporter(SpanExporter):
                     datadog_span.set_tag("error.msg", exc_val)
                     datadog_span.set_tag("error.type", exc_type)
 
-            # combine resource attributes and span attributes, don't modify existing span attributes
+            # combine resource attributes and span attributes, don't modify
+            # existing span attributes
             combined_span_tags = {}
             combined_span_tags.update(resource_tags)
             combined_span_tags.update(span.attributes)
@@ -301,6 +314,7 @@ def _parse_tags_str(tags_str):
     return parsed_tags
 
 
+
 def _extract_tags_from_resource(resource):
     """Parse tags from resource.attributes, except service.name which
     has special significance within datadog"""
@@ -315,3 +329,76 @@ def _extract_tags_from_resource(resource):
         else:
             tags[attribute_key] = attribute_value
     return [tags, service_name]
+
+
+class DatadogMetricsExporter(MetricsExporter):
+    """
+    Args:
+        tags: list of strings
+    """
+
+    def __init__(self, host=None, port=None, tags: Optional[Sequence[str]] = None, prefix: str = ""):
+        self._statsd = None
+        self._host = host or os.environ.get("DD_AGENT_HOST", "localhost")
+        self._port = int(port or os.environ.get("DD_DOGSTATSD_PORT", 8125))
+        self._prefix = prefix
+
+        self._tags = tags or os.environ.get("DD_TAGS")
+
+        self._non_letters_nor_digits_re = re.compile(
+            r"[^\w]", re.UNICODE | re.IGNORECASE
+        )
+
+    @property
+    def statsd(self):
+        """Our DogStatsd instance"""
+        if not self._statsd:
+            self._statsd = DogStatsd(host = self._host,
+                                     port = self._port,
+                                     constant_tags = self._tags)
+        return self._statsd
+
+
+    def export(self, export_records: Sequence[ExportRecord]) -> MetricsExportResult:
+        for record in export_records:
+            self._export_record(record)
+        return MetricsExportResult.SUCCESS
+
+    def _export_record(self, record):
+        # handle labels/tags
+        tags = list(':'.join(str(tag)) for tag in dict(record.labels).items())
+
+        # handle name
+        metric_name = ""
+        if self._prefix != "":
+            metric_name = self._prefix + "_"
+        metric_name += self._sanitize(record.instrument.name)
+
+        if isinstance(record.instrument, (Counter, UpDownCounter)):
+            self.statsd.increment(
+                metric_name,
+                value = record.aggregator.checkpoint,
+                tags = tags,
+            )
+
+        elif isinstance(record.instrument, ValueRecorder):
+            value = record.aggregator.checkpoint
+            if isinstance(record.aggregator, MinMaxSumCountAggregator):
+                self.statsd.gauge(metric_name,
+                                  value = value.sum,
+                                  tags = tags)
+            else:
+                self.statsd.gauge(metric_name,
+                                  value = value,
+                                  tags = tags)
+
+        else:
+            logger.warning(
+                "Unsupported metric type, %s", type(record.instrument)
+            )
+
+    def _sanitize(self, key: str) -> str:
+        """sanitize the given metric name or label according to DataDog rules.
+        Replace all characters other than [A-Za-z0-9_] with '_'.
+        """
+        return self._non_letters_nor_digits_re.sub("_", key)
