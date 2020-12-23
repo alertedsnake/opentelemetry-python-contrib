@@ -56,7 +56,6 @@ class DatadogFormat(TextMapPropagator):
         )
 
         origin = extract_first_element(getter.get(carrier, self.ORIGIN_KEY))
-        logger.debug(f"origin is {origin}")
 
         trace_flags = trace.TraceFlags()
         if sampled and int(sampled) in (
