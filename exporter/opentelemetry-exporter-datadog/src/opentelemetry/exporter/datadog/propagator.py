@@ -56,6 +56,7 @@ class DatadogFormat(TextMapPropagator):
         )
 
         origin = extract_first_element(getter.get(carrier, self.ORIGIN_KEY))
+        logger.debug(f"origin is {origin}")
 
         trace_flags = trace.TraceFlags()
         if sampled and int(sampled) in (
@@ -99,7 +100,7 @@ class DatadogFormat(TextMapPropagator):
             self.SAMPLING_PRIORITY_KEY,
             str(constants.AUTO_KEEP if sampled else constants.AUTO_REJECT),
         )
-        if span.context.trace_state.get(constants.DD_ORIGIN):
+        if span.context.trace_state.get(constants.DD_ORIGIN) is not None:
             set_in_carrier(
                 carrier,
                 self.ORIGIN_KEY,
