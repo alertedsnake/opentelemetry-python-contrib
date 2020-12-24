@@ -314,7 +314,6 @@ def _parse_tags_str(tags_str):
     return parsed_tags
 
 
-
 def _extract_tags_from_resource(resource):
     """Parse tags from resource.attributes, except service.name which
     has special significance within datadog"""
@@ -337,60 +336,81 @@ class DatadogMetricsExporter(MetricsExporter):
         tags: list of strings
     """
 
-    def __init__(self, host=None, port=None, tags: Optional[Sequence[str]] = None, prefix: str = ""):
+    def __init__(
+        self,
+        host=None,
+        port=None,
+        service=None,
+        env=None,
+        version=None,
+        tags: Optional[Sequence[str]] = None,
+    ):
         self._statsd = None
         self._host = host or os.environ.get("DD_AGENT_HOST", "localhost")
         self._port = int(port or os.environ.get("DD_DOGSTATSD_PORT", 8125))
-        self._prefix = prefix
 
-        self._tags = tags or os.environ.get("DD_TAGS")
+        self._service = service or os.environ.get("DD_SERVICE")
+        self._env = env or os.environ.get("DD_ENV")
+        self._version = version or os.environ.get("DD_VERSION")
 
-        self._non_letters_nor_digits_re = re.compile(
-            r"[^\w]", re.UNICODE | re.IGNORECASE
+        # parse tags, set the big 3 if we've got them specifically
+        tags = _parse_tags_str(tags or os.environ.get("DD_TAGS"))
+        if self._env:
+            tags["env"] = self._env
+        if self._service:
+            tags["service"] = self._service
+        if self._version:
+            tags["version"] = self._version
+
+        # datadog expects tags as a list
+        self._tags = list(":".join(item) for item in tags.items())
+
+        self._re_sanitize_metric = re.compile(
+            r"[^\w.]", re.UNICODE | re.IGNORECASE
         )
 
     @property
     def statsd(self):
         """Our DogStatsd instance"""
         if not self._statsd:
-            self._statsd = DogStatsd(host = self._host,
-                                     port = self._port,
-                                     constant_tags = self._tags)
+            logger.debug(
+                "Connecting to dogstatsd at %s:%d", self._host, self._port
+            )
+            self._statsd = DogStatsd(
+                host=self._host, port=self._port, constant_tags=self._tags
+            )
         return self._statsd
 
+    def export(
+        self, export_records: Sequence[ExportRecord]
+    ) -> MetricsExportResult:
 
-    def export(self, export_records: Sequence[ExportRecord]) -> MetricsExportResult:
+        # batch these
+        self.statsd.open_buffer()
         for record in export_records:
             self._export_record(record)
+        self.statsd.close_buffer()
+
         return MetricsExportResult.SUCCESS
 
     def _export_record(self, record):
         # handle labels/tags
-        tags = list(':'.join(str(tag)) for tag in dict(record.labels).items())
+        tags = list(":".join(tag) for tag in dict(record.labels).items())
 
         # handle name
-        metric_name = ""
-        if self._prefix != "":
-            metric_name = self._prefix + "_"
-        metric_name += self._sanitize(record.instrument.name)
+        metric_name = self._sanitize(record.instrument.name)
 
         if isinstance(record.instrument, (Counter, UpDownCounter)):
             self.statsd.increment(
-                metric_name,
-                value = record.aggregator.checkpoint,
-                tags = tags,
+                metric_name, value=record.aggregator.checkpoint, tags=tags,
             )
 
         elif isinstance(record.instrument, ValueRecorder):
             value = record.aggregator.checkpoint
             if isinstance(record.aggregator, MinMaxSumCountAggregator):
-                self.statsd.gauge(metric_name,
-                                  value = value.sum,
-                                  tags = tags)
+                self.statsd.gauge(metric_name, value=value.sum, tags=tags)
             else:
-                self.statsd.gauge(metric_name,
-                                  value = value,
-                                  tags = tags)
+                self.statsd.gauge(metric_name, value=value, tags=tags)
 
         else:
             logger.warning(
@@ -399,6 +419,6 @@ class DatadogMetricsExporter(MetricsExporter):
 
     def _sanitize(self, key: str) -> str:
         """sanitize the given metric name or label according to DataDog rules.
-        Replace all characters other than [A-Za-z0-9_] with '_'.
+        Replace all characters other than [A-Za-z0-9_.] with '_'.
         """
-        return self._non_letters_nor_digits_re.sub("_", key)
+        return self._re_sanitize_metric.sub("_", key)
